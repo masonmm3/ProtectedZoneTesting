@@ -65,6 +65,10 @@
         //    // actually used.
         //    .lazy = false,
         //},
+        .pMathz = .{
+            .url = "git+https://github.com/masonmm3/pMathZ.git#63fec6cc1dde35938ca2df3fd2919831cbada618",
+            .hash = "pMathz-0.0.0-wVaB550sAABaa5wqe5Qr0xOxkK_fDFxBhSOwkDb_PvQg",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.

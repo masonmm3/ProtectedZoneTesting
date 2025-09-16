@@ -13,6 +13,22 @@ pub fn build(b: *std.Build) void {
         .name = "ProtectedZoneTesting",
         .root_module = exe_mod,
     });
+
+    // const raylib_dep = b.dependency("raylib_zig", .{
+    //     .target = target,
+    //     .optimize = optimize,
+    //     .platform = .rgfw,
+    // });
+    // exe.root_module.addImport("raylib", raylib_dep.module("raylib"));
+    // exe.root_module.linkLibrary(raylib_dep.artifact("raylib"));
+
+    const pMathz_dep = b.dependency("pMathz", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("pMathz", pMathz_dep.module("pMathz"));
+    exe.root_module.linkLibrary(pMathz_dep.artifact("pMathz"));
+
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
