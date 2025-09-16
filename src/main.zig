@@ -184,9 +184,17 @@ pub fn main() !void {
         rl.beginDrawing();
         defer rl.endDrawing();
 
-        elevatorPid.updateMotorLoop(&elevatorMotor, 70, rl.getFrameTime());
+        var TargetPosition: f32 = 75;
 
-        std.debug.print("position : {} ", .{elevatorMotor.position});
+        if (rl.isKeyDown(.one)) {
+            TargetPosition = 70;
+        } else if (rl.isKeyDown(.two)) {
+            TargetPosition = 40;
+        } else if (rl.isKeyDown(.three)) {
+            TargetPosition = 0;
+        }
+
+        elevatorPid.updateMotorLoop(&elevatorMotor, TargetPosition, rl.getFrameTime());
 
         try elevator.setElevatorHeight(elevatorMotor.position);
 
