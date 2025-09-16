@@ -69,6 +69,10 @@
             .url = "git+https://github.com/masonmm3/pMathZ.git#63fec6cc1dde35938ca2df3fd2919831cbada618",
             .hash = "pMathz-0.0.0-wVaB550sAABaa5wqe5Qr0xOxkK_fDFxBhSOwkDb_PvQg",
         },
+        .raylib_zig = .{
+            .url = "git+https://github.com/raylib-zig/raylib-zig?ref=devel#39ce5d4a8e8eab9c533f5787e3206d997a9e2111",
+            .hash = "raylib_zig-5.6.0-dev-KE8REDc2BQCri1t11guC1tZA-Luc7NuVeml_59LSELLe",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.

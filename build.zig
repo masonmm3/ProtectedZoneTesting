@@ -14,18 +14,22 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
 
-    // const raylib_dep = b.dependency("raylib_zig", .{
-    //     .target = target,
-    //     .optimize = optimize,
-    //     .platform = .rgfw,
-    // });
-    // exe.root_module.addImport("raylib", raylib_dep.module("raylib"));
-    // exe.root_module.linkLibrary(raylib_dep.artifact("raylib"));
+    const raylib_dep = b.dependency("raylib_zig", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const raylib_module = raylib_dep.module("raylib");
+    const raylib_artifact = raylib_dep.artifact("raylib");
+
+    exe.linkLibrary(raylib_artifact);
+    exe.root_module.addImport("raylib", raylib_module);
 
     const pMathz_dep = b.dependency("pMathz", .{
         .target = target,
         .optimize = optimize,
     });
+
     exe.root_module.addImport("pMathz", pMathz_dep.module("pMathz"));
     exe.root_module.linkLibrary(pMathz_dep.artifact("pMathz"));
 
