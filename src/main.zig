@@ -180,8 +180,8 @@ pub fn main() !void {
     var elevatorMotor = Motor{};
     var elevatorPid = PIDController.init(5, 0.0, 0.5);
 
-    var elevatorArm = Mechanism{ .pose = .{ .x = 33 * scaleValue, .y = 14 * scaleValue }, .pivot = .{ .x = 0, .y = (-25.0 / 2.0) * scaleValue }, .angle = 0, .length = 25 * scaleValue, .width = 2 * scaleValue, .color = .red };
-    var armMotor = Motor{ .gear_ratio = 6 };
+    var elevatorArm = Mechanism{ .pose = .{ .x = 33 * scaleValue, .y = 14 * scaleValue }, .pivot = .{ .x = 0, .y = (-30.0 / 2.0) * scaleValue }, .angle = 0, .length = 30 * scaleValue, .width = 2 * scaleValue, .color = .red };
+    var armMotor = Motor{ .gear_ratio = 10 };
     var armPid = PIDController.init(5, 0.0, 0.5);
 
     while (!rl.windowShouldClose()) {
