@@ -180,23 +180,39 @@ pub fn main() !void {
     var elevatorMotor = Motor{};
     var elevatorPid = PIDController.init(5, 0.0, 0.5);
 
+    var elevatorArm = Mechanism{ .pose = .{ .x = 33 * scaleValue, .y = 14 * scaleValue }, .pivot = .{ .x = 0, .y = (-25.0 / 2.0) * scaleValue }, .angle = 0, .length = 25 * scaleValue, .width = 2 * scaleValue, .color = .red };
+    var armMotor = Motor{ .gear_ratio = 6 };
+    var armPid = PIDController.init(5, 0.0, 0.5);
+
     while (!rl.windowShouldClose()) {
         rl.beginDrawing();
         defer rl.endDrawing();
 
         var TargetPosition: f32 = 75;
+        var TargetAngle: f32 = 0;
 
         if (rl.isKeyDown(.one)) {
             TargetPosition = 70;
+            TargetAngle = 25;
         } else if (rl.isKeyDown(.two)) {
             TargetPosition = 40;
+            TargetAngle = 25;
         } else if (rl.isKeyDown(.three)) {
             TargetPosition = 0;
+            TargetAngle = 40;
         }
 
         elevatorPid.updateMotorLoop(&elevatorMotor, TargetPosition, rl.getFrameTime());
 
         try elevator.setElevatorHeight(elevatorMotor.position);
+
+        elevatorArm.pose.y = elevator.elevatorCariage.pose.y + (20 * scaleValue);
+
+        armPid.updateMotorLoop(&armMotor, TargetAngle, rl.getFrameTime());
+
+        elevatorArm.angle = -armMotor.position;
+
+        drawMechanism(&elevatorArm);
 
         rl.clearBackground(.white);
     }
