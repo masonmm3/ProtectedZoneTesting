@@ -3,9 +3,6 @@ const pMz = @import("pMathz");
 const rl = @import("raylib");
 const scaleValue = 5.0;
 
-//errors
-const elevatorErrors = error{ setpointTooLow, setpointTooHigh };
-
 //custom types
 const Mechanism = struct {
     pose: pMz.Vec2d,
@@ -27,13 +24,13 @@ const ElevatorMech = struct {
         //this error is trivial to handle but I want to know if it is happening and causing an issue
         if (setHeight < self.elevatorUpright.pose.y) {
             if (setHeight < self.elevatorUpright.pose.y - (10 * scaleValue)) {
-                return elevatorErrors.setpointTooLow;
+                return;
             } else {
                 setHeight = self.elevatorUpright.pose.y;
             }
         } else if (setHeight > self.elevatorUpright.pose.y + (2 * ((self.elevatorUpright.length) - (5 * scaleValue))) + (5 * scaleValue) - (8 * scaleValue)) {
             if (setHeight > self.elevatorUpright.pose.y + (2 * ((self.elevatorUpright.length) - (5 * scaleValue))) + (5 * scaleValue) - (8 * scaleValue) + (10 * scaleValue)) {
-                return elevatorErrors.setpointTooHigh;
+                return;
             } else {
                 setHeight = self.elevatorUpright.pose.y + (2 * ((self.elevatorUpright.length) - (5 * scaleValue))) + (5 * scaleValue) - (8 * scaleValue);
             }
@@ -181,8 +178,14 @@ pub fn main() !void {
     var elevatorPid = PIDController.init(5, 0.0, 0.5);
 
     var elevatorArm = Mechanism{ .pose = .{ .x = 33 * scaleValue, .y = 14 * scaleValue }, .pivot = .{ .x = 0, .y = (-30.0 / 2.0) * scaleValue }, .angle = 0, .length = 30 * scaleValue, .width = 2 * scaleValue, .color = .red };
-    var armMotor = Motor{ .gear_ratio = 10 };
+    var armMotor = Motor{ .gear_ratio = 25 };
     var armPid = PIDController.init(5, 0.0, 0.5);
+
+    var slider = Mechanism{ .pose = .{ .x = 38 * scaleValue, .y = 16 * scaleValue }, .pivot = .{}, .angle = 0, .length = 2 * scaleValue, .width = 2 * scaleValue, .color = .black };
+    var sliderMotor = Motor{};
+    var sliderPid = PIDController.init(5, 0, 0.5);
+
+    var collisionPredicted = false;
 
     while (!rl.windowShouldClose()) {
         rl.beginDrawing();
@@ -190,40 +193,118 @@ pub fn main() !void {
 
         var TargetPosition: f32 = 75;
         var TargetAngle: f32 = 0;
+        var sliderTarget: f32 = 0;
+        var rawTargetAngle: f32 = 0;
 
-        if (rl.isKeyDown(.one)) {
+        var predictedSliderPose: pMz.Vec2d = slider.pose.scalarDivide(scaleValue);
+        predictedSliderPose.x += sliderMotor.motor_speed * rl.getFrameTime();
+
+        var predictedArmPivot: pMz.Vec2d = elevatorArm.pose.scalarDivide(scaleValue).Subtract(elevatorArm.pivot.scalarDivide(scaleValue));
+        predictedArmPivot.y -= elevatorMotor.motor_speed * rl.getFrameTime();
+
+        const armLength = elevatorArm.length / scaleValue;
+
+        const predictedArmAngle = -armMotor.position + (armMotor.motor_speed * (rl.getFrameTime()));
+
+        const armLine: pMz.Line = .{ .point = predictedArmPivot, .angle = predictedArmAngle };
+
+        const closestPointOnLine: pMz.Vec2d = armLine.projectPoint(predictedSliderPose);
+
+        const perpendicularDistance = closestPointOnLine.Subtract(predictedSliderPose).magnitude();
+
+        //no std.math.abs :wah:
+        const nearTheLine = perpendicularDistance <= 5 + (std.math.sqrt(armMotor.motor_speed * armMotor.motor_speed) * 0.005) + (std.math.sqrt(armMotor.motor_speed * armMotor.motor_speed) * 0.005);
+
+        const pivotToProjection: pMz.Vec2d = closestPointOnLine.Subtract(predictedArmPivot);
+
+        const projectedPointDistance = pivotToProjection.magnitude();
+        const projectionIsWithinLength = projectedPointDistance <= armLength;
+
+        const collision = nearTheLine and projectionIsWithinLength;
+
+        if (collision == true) collisionPredicted = true;
+
+        if (rl.isKeyDown(.one)) { //high
             TargetPosition = 70;
-            TargetAngle = 25;
-        } else if (rl.isKeyDown(.two)) {
+            rawTargetAngle = 25;
+            sliderTarget = 0;
+        } else if (rl.isKeyDown(.two)) { //low
             TargetPosition = 40;
-            TargetAngle = 25;
-        } else if (rl.isKeyDown(.three)) {
+            rawTargetAngle = 25;
+            sliderTarget = 0;
+        } else if (rl.isKeyDown(.three)) { //ground
             TargetPosition = 0;
-            TargetAngle = 40;
+            rawTargetAngle = 40;
+            sliderTarget = 25;
+        } else if (rl.isKeyDown(.four)) {
+            TargetPosition = 0;
+            rawTargetAngle = 180;
+            sliderTarget = 0;
+        } else if (rl.isKeyDown(.five)) {
+            TargetPosition = 0;
+            rawTargetAngle = 0;
+            sliderTarget = 0;
+        } else if (rl.isKeyDown(.r)) {
+            collisionPredicted = false;
+        }
+
+        TargetAngle = rawTargetAngle;
+
+        if (collisionPredicted) {
+            if (sliderMotor.position > 5) {
+                sliderTarget = 25;
+            }
+            if (TargetAngle < 90 or (elevatorMotor.position < armLength - 1 and armMotor.position < 85)) {
+                TargetAngle = 0;
+            }
+            if (TargetPosition < armLength) {
+                TargetPosition = armLength;
+            }
+        }
+
+        if (collisionPredicted and armMotor.position < rawTargetAngle + 5 and armMotor.position > rawTargetAngle - 5) {
+            collisionPredicted = false;
+        } else if (collisionPredicted and elevatorMotor.position > armLength) {
+            collisionPredicted = false;
         }
 
         elevatorPid.updateMotorLoop(&elevatorMotor, TargetPosition, rl.getFrameTime());
 
         try elevator.setElevatorHeight(elevatorMotor.position);
 
+        sliderPid.updateMotorLoop(&sliderMotor, sliderTarget, rl.getFrameTime());
+
         elevatorArm.pose.y = elevator.elevatorCariage.pose.y + (20 * scaleValue);
 
         armPid.updateMotorLoop(&armMotor, TargetAngle, rl.getFrameTime());
 
+        slider.pose.x = (sliderMotor.position + 38) * scaleValue;
+
         elevatorArm.angle = -armMotor.position;
 
         drawMechanism(&elevatorArm);
+
+        drawMechanism(&slider);
 
         rl.clearBackground(.white);
     }
 }
 
 //helper functions
+const Line = struct {
+    a: rl.Vector2,
+    b: rl.Vector2,
+};
+
+fn getMechRectangle(mech: *Mechanism) rl.Rectangle {
+    const position = getRLPointFromNormalPoint(mech.pose);
+    const rec = rl.Rectangle{ .height = mech.length, .width = mech.width, .x = position.x, .y = position.y };
+    return rec;
+}
 
 fn drawMechanism(mech: *Mechanism) void {
-    const position = getRLPointFromNormalPoint(mech.pose);
     const pivot = offsetR1Vector(mech.pivot, mech);
-    const rec = rl.Rectangle{ .height = mech.length, .width = mech.width, .x = position.x, .y = position.y };
+    const rec = getMechRectangle(mech);
     rl.drawRectanglePro(rec, pivot, mech.angle, mech.color);
 }
 
