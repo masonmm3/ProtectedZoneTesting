@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const exe = b.addExecutable(.{
-        .name = "TimeTracker",
+        .name = "ProtectedZoneTesting",
         .root_module = exe_mod,
     });
 
@@ -25,8 +25,13 @@ pub fn build(b: *std.Build) void {
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib_module);
 
-    const dvui_dep = b.dependency("dvui", .{ .target = target, .optimize = optimize, .backend = .raylib });
-    exe.root_module.addImport("dvui", dvui_dep.module("dvui_raylib"));
+    const pMathz_dep = b.dependency("pMathz", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    exe.root_module.addImport("pMathz", pMathz_dep.module("pMathz"));
+    exe.root_module.linkLibrary(pMathz_dep.artifact("pMathz"));
 
     b.installArtifact(exe);
 

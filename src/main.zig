@@ -1,146 +1,320 @@
 const std = @import("std");
-const dvui = @import("dvui");
-const ArrayList = std.ArrayList;
-const RaylibBackend = dvui.backend;
-const raylib = @import("raylib");
-comptime {
-    std.debug.assert(@hasDecl(RaylibBackend, "RaylibBackend"));
-}
+const pMz = @import("pMathz");
+const rl = @import("raylib");
+const scaleValue = 5.0;
 
-const window_icon_png = @embedFile("resources/zig-favicon.png");
-
-var gpa_instance = std.heap.GeneralPurposeAllocator(.{}){};
-const gpa = gpa_instance.allocator();
-
-const vsync = true;
-var scale_val: f32 = 1.0;
-
-var show_dialog_outside_frame: bool = false;
-
-var isClockedIn: bool = false;
-
-pub const c = RaylibBackend.c;
-
-// var text_entry_buf = std.mem.zeroes([50]u8);
-var text_entry_buf: ArrayList(u8) = .empty;
-
-const inputState = struct {
-    newLine: bool = false,
+//custom types
+const Mechanism = struct {
+    pose: pMz.Vec2d,
+    pivot: pMz.Vec2d,
+    length: f32 = 0,
+    width: f32 = 0,
+    angle: f32 = 0,
+    color: rl.Color,
 };
 
-pub fn main() !void {
-    defer _ = text_entry_buf.deinit(gpa);
-    defer _ = gpa_instance.deinit();
+const ElevatorMech = struct {
+    elevatorUpright: *Mechanism,
+    elevatorSlide: *Mechanism,
+    elevatorCariage: *Mechanism,
 
-    _ = try text_entry_buf.addOne(gpa);
+    pub fn setElevatorHeight(self: *ElevatorMech, height: f32) !void {
+        var setHeight = (height * scaleValue) + self.elevatorUpright.pose.y;
 
-    var backend = try RaylibBackend.initWindow(.{
-        .gpa = gpa,
-        .size = .{ .w = 800.0, .h = 600.0 },
-        .vsync = vsync,
-        .title = "Zeditor",
-        .icon = window_icon_png, // can also call setIconFromFileContent()
-    });
-    defer backend.deinit();
-    backend.log_events = true;
-
-    var win = try dvui.Window.init(@src(), gpa, backend.backend(), .{});
-    defer win.deinit();
-
-    var input = inputState{
-        .newLine = false,
-    };
-
-    try SaveClockedIn();
-
-    while (!raylib.windowShouldClose()) {
-        try backend.addAllEvents(&win);
-        c.BeginDrawing();
-        const nstime = win.beginWait(true);
-
-        try win.begin(nstime);
-        backend.clear();
-        //{
-
-        //content of ui
-        try dvui_frame(&input);
-
-        const end_micros = try win.end(.{});
-
-        // cursor management
-        backend.setCursor(win.cursorRequested());
-
-        const wait_event_micros = win.waitTime(end_micros);
-
-        //}
-        backend.EndDrawingWaitEventTimeout(wait_event_micros);
-    }
-}
-
-fn dvui_frame(state: *inputState) !void {
-    var scroll = dvui.scrollArea(@src(), .{}, .{ .expand = .both });
-    defer scroll.deinit();
-
-    const evts = dvui.events();
-
-    for (evts) |*e| {
-        if (e.evt == .key) {
-            if (e.evt.key.action == .down and (e.evt.key.mod.control() or e.evt.key.mod.command())) {
-                //handle ctrl shortcuts
-            } else if (e.evt.key.action != .up and (e.evt.key.code == .enter or e.evt.key.code == .kp_enter)) {
-                state.newLine = true;
+        //this error is trivial to handle but I want to know if it is happening and causing an issue
+        if (setHeight < self.elevatorUpright.pose.y) {
+            if (setHeight < self.elevatorUpright.pose.y - (10 * scaleValue)) {
+                return;
+            } else {
+                setHeight = self.elevatorUpright.pose.y;
             }
-
-            if (e.evt.key.action == .down) {
-                _ = try text_entry_buf.addOne(gpa);
+        } else if (setHeight > self.elevatorUpright.pose.y + (2 * ((self.elevatorUpright.length) - (5 * scaleValue))) + (5 * scaleValue) - (8 * scaleValue)) {
+            if (setHeight > self.elevatorUpright.pose.y + (2 * ((self.elevatorUpright.length) - (5 * scaleValue))) + (5 * scaleValue) - (8 * scaleValue) + (10 * scaleValue)) {
+                return;
+            } else {
+                setHeight = self.elevatorUpright.pose.y + (2 * ((self.elevatorUpright.length) - (5 * scaleValue))) + (5 * scaleValue) - (8 * scaleValue);
             }
         }
+
+        self.elevatorCariage.pose.y = setHeight;
+        sequenceElevator(self);
     }
 
-    const button = dvui.button(@src(), "clock in", .{}, .{ .expand = .horizontal });
-    if (button) {
-        //clock in action
+    fn sequenceElevator(self: *ElevatorMech) void {
+        var setHeight = self.elevatorCariage.pose.y + (8 * scaleValue) - self.elevatorUpright.length;
+        if (setHeight > (self.elevatorUpright.length - (5 * scaleValue)) + self.elevatorUpright.pose.y) {
+            setHeight = self.elevatorUpright.length - (5 * scaleValue) + self.elevatorUpright.pose.y;
+        } else if (setHeight < self.elevatorUpright.pose.y) {
+            setHeight = self.elevatorUpright.pose.y;
+        }
+
+        self.elevatorSlide.pose.y = setHeight;
+        drawElevatorMech(self.elevatorCariage);
+        drawElevatorMech(self.elevatorSlide);
+        drawElevatorMech(self.elevatorUpright);
     }
 
-    var text = dvui.textEntry(@src(), .{ .text = .{ .buffer = text_entry_buf.items } }, .{ .expand = .both });
-    defer text.deinit();
+    fn drawElevatorMech(mech: *Mechanism) void {
+        const position = getRLPointFromNormalPoint(mech.pose);
+        const pivot = offsetR1Vector(mech.pivot, mech);
+        const rec = rl.Rectangle{ .height = mech.length, .width = mech.width, .x = position.x, .y = position.y };
+        rl.drawRectanglePro(rec, pivot, mech.angle, mech.color);
+    }
+};
 
-    if (state.newLine) {
-        state.newLine = false;
-        _ = try text_entry_buf.addOne(gpa);
-        _ = try text_entry_buf.addOne(gpa);
-        text.textTyped("\n", false);
+const Motor = struct {
+    stall_torque: f32 = 7.0,
+    _moment_of_inertia: f32 = 0.0000105,
+    gear_ratio: f32 = 15,
+    motor_speed: f32 = 0.0,
+    position: f32 = 0.0,
+    kv: f32 = 6000.0 / 12.0,
+
+    pub fn update(self: *Motor, voltage: f32, dt: f32) f32 {
+        const effective_moi = self._moment_of_inertia / (self.gear_ratio * self.gear_ratio);
+
+        const numerator = voltage * self.kv - self.motor_speed;
+        const denominator = (144 * self.kv * self.kv * effective_moi) / self.stall_torque;
+
+        const angular_acceleration = numerator / denominator;
+
+        self.motor_speed += angular_acceleration * dt;
+        self.position += (self.motor_speed / self.gear_ratio) * dt;
+
+        if (self.drive_broke()) {
+            self.reset_motor();
+        }
+
+        return self.motor_speed;
+    }
+
+    pub fn reset_motor(self: *Motor) void {
+        self.motor_speed = 0.0;
+        self.position = 0.0;
+    }
+
+    pub fn drive_broke(self: *Motor) bool {
+        return std.math.isNan(self.motor_speed) or std.math.isInf(self.motor_speed) or std.math.isNan(self.position) or std.math.isInf(self.position);
+    }
+};
+
+const PIDController = struct {
+    kp: f32,
+    ki: f32,
+    kd: f32,
+    integral: f32,
+    previous_error: f32,
+
+    pub fn init(kp: f32, ki: f32, kd: f32) PIDController {
+        return PIDController{
+            .kp = kp,
+            .ki = ki,
+            .kd = kd,
+            .integral = 0.0,
+            .previous_error = 0.0,
+        };
+    }
+
+    pub fn update(self: *PIDController, target_speed: f32, current_speed: f32, dt: f32) f32 {
+        const targetError = target_speed - current_speed;
+
+        // Proportional term
+        const proportional = self.kp * targetError;
+
+        // Integral term
+        self.integral += targetError * dt;
+        const integral = self.ki * self.integral;
+
+        // Derivative term
+        const derivative = self.kd * (targetError - self.previous_error) / dt;
+        self.previous_error = targetError;
+
+        return proportional + integral + derivative;
+    }
+
+    pub fn updateMotorLoop(self: *PIDController, motor: *Motor, target_position: f32, dt: f32) void {
+        const targetError = target_position - motor.position;
+
+        // Proportional term
+        const proportional = self.kp * targetError;
+
+        // Integral term
+        self.integral += targetError * dt;
+        const integral = self.ki * self.integral;
+
+        // Derivative term
+        const derivative = self.kd * (targetError - self.previous_error) / dt;
+        self.previous_error = targetError;
+
+        var voltage = proportional + integral + derivative;
+
+        if (voltage > 12) {
+            voltage = 12;
+        } else if (voltage < -12) {
+            voltage = -12;
+        }
+
+        _ = motor.update(voltage, dt);
+    }
+};
+
+//main run loop
+pub fn main() !void {
+    const screenWidth = 800;
+    const screenHeight = 800;
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    rl.initWindow(screenWidth, screenHeight, "phyz-example");
+    rl.setTargetFPS(60);
+
+    var elevatorUpright = Mechanism{ .pose = .{ .x = 30 * scaleValue, .y = 4 * scaleValue }, .pivot = .{ .x = 0 * scaleValue, .y = 20 * scaleValue }, .angle = 0, .length = 40 * scaleValue, .width = 4 * scaleValue, .color = .orange };
+    var elevatorSlide = Mechanism{ .pose = .{ .x = 30 * scaleValue, .y = 0 * scaleValue }, .pivot = .{ .x = 0 * scaleValue, .y = 20 * scaleValue }, .angle = 0, .length = 40 * scaleValue, .width = 3 * scaleValue, .color = .blue };
+    var elevatorCarraige = Mechanism{ .pose = .{ .x = 30 * scaleValue, .y = 4 * scaleValue }, .pivot = .{ .x = -1.5 * scaleValue, .y = (10) * scaleValue }, .angle = 0, .length = 20 * scaleValue, .width = 6 * scaleValue, .color = .gray };
+    var elevator = ElevatorMech{ .elevatorCariage = &elevatorCarraige, .elevatorSlide = &elevatorSlide, .elevatorUpright = &elevatorUpright };
+
+    var elevatorMotor = Motor{};
+    var elevatorPid = PIDController.init(5, 0.0, 0.5);
+
+    var elevatorArm = Mechanism{ .pose = .{ .x = 33 * scaleValue, .y = 14 * scaleValue }, .pivot = .{ .x = 0, .y = (-30.0 / 2.0) * scaleValue }, .angle = 0, .length = 30 * scaleValue, .width = 2 * scaleValue, .color = .red };
+    var armMotor = Motor{ .gear_ratio = 25 };
+    var armPid = PIDController.init(5, 0.0, 0.5);
+
+    var slider = Mechanism{ .pose = .{ .x = 38 * scaleValue, .y = 16 * scaleValue }, .pivot = .{}, .angle = 0, .length = 2 * scaleValue, .width = 2 * scaleValue, .color = .black };
+    var sliderMotor = Motor{};
+    var sliderPid = PIDController.init(5, 0, 0.5);
+
+    var collisionPredicted = false;
+
+    while (!rl.windowShouldClose()) {
+        rl.beginDrawing();
+        defer rl.endDrawing();
+
+        var TargetPosition: f32 = 75;
+        var TargetAngle: f32 = 0;
+        var sliderTarget: f32 = 0;
+        var rawTargetAngle: f32 = 0;
+
+        var predictedSliderPose: pMz.Vec2d = slider.pose.scalarDivide(scaleValue);
+        predictedSliderPose.x += sliderMotor.motor_speed * rl.getFrameTime();
+
+        var predictedArmPivot: pMz.Vec2d = elevatorArm.pose.scalarDivide(scaleValue).Subtract(elevatorArm.pivot.scalarDivide(scaleValue));
+        predictedArmPivot.y -= elevatorMotor.motor_speed * rl.getFrameTime();
+
+        const armLength = elevatorArm.length / scaleValue;
+
+        const predictedArmAngle = -armMotor.position + (armMotor.motor_speed * (rl.getFrameTime()));
+
+        const armLine: pMz.Line = .{ .point = predictedArmPivot, .angle = predictedArmAngle };
+
+        const closestPointOnLine: pMz.Vec2d = armLine.projectPoint(predictedSliderPose);
+
+        const perpendicularDistance = closestPointOnLine.Subtract(predictedSliderPose).magnitude();
+
+        //no std.math.abs :wah:
+        const nearTheLine = perpendicularDistance <= 5 + (std.math.sqrt(armMotor.motor_speed * armMotor.motor_speed) * 0.005) + (std.math.sqrt(armMotor.motor_speed * armMotor.motor_speed) * 0.005);
+
+        const pivotToProjection: pMz.Vec2d = closestPointOnLine.Subtract(predictedArmPivot);
+
+        const projectedPointDistance = pivotToProjection.magnitude();
+        const projectionIsWithinLength = projectedPointDistance <= armLength;
+
+        const collision = nearTheLine and projectionIsWithinLength;
+
+        if (collision == true) collisionPredicted = true;
+
+        if (rl.isKeyDown(.one)) { //high
+            TargetPosition = 70;
+            rawTargetAngle = 25;
+            sliderTarget = 0;
+        } else if (rl.isKeyDown(.two)) { //low
+            TargetPosition = 40;
+            rawTargetAngle = 25;
+            sliderTarget = 0;
+        } else if (rl.isKeyDown(.three)) { //ground
+            TargetPosition = 0;
+            rawTargetAngle = 40;
+            sliderTarget = 25;
+        } else if (rl.isKeyDown(.four)) {
+            TargetPosition = 0;
+            rawTargetAngle = 180;
+            sliderTarget = 0;
+        } else if (rl.isKeyDown(.five)) {
+            TargetPosition = 0;
+            rawTargetAngle = 0;
+            sliderTarget = 0;
+        } else if (rl.isKeyDown(.r)) {
+            collisionPredicted = false;
+        }
+
+        TargetAngle = rawTargetAngle;
+
+        if (collisionPredicted) {
+            if (sliderMotor.position > 5) {
+                sliderTarget = 25;
+            }
+            if (TargetAngle < 90 or (elevatorMotor.position < armLength - 1 and armMotor.position < 85)) {
+                TargetAngle = 0;
+            }
+            if (TargetPosition < armLength) {
+                TargetPosition = armLength;
+            }
+        }
+
+        if (collisionPredicted and armMotor.position < rawTargetAngle + 5 and armMotor.position > rawTargetAngle - 5) {
+            collisionPredicted = false;
+        } else if (collisionPredicted and elevatorMotor.position > armLength) {
+            collisionPredicted = false;
+        }
+
+        elevatorPid.updateMotorLoop(&elevatorMotor, TargetPosition, rl.getFrameTime());
+
+        try elevator.setElevatorHeight(elevatorMotor.position);
+
+        sliderPid.updateMotorLoop(&sliderMotor, sliderTarget, rl.getFrameTime());
+
+        elevatorArm.pose.y = elevator.elevatorCariage.pose.y + (20 * scaleValue);
+
+        armPid.updateMotorLoop(&armMotor, TargetAngle, rl.getFrameTime());
+
+        slider.pose.x = (sliderMotor.position + 38) * scaleValue;
+
+        elevatorArm.angle = -armMotor.position;
+
+        drawMechanism(&elevatorArm);
+
+        drawMechanism(&slider);
+
+        rl.clearBackground(.white);
     }
 }
 
-fn save(words: []u8) !void {
-    _ = words;
-    const fileName = try dvui.dialogNativeFileSave(gpa, .{});
+//helper functions
+const Line = struct {
+    a: rl.Vector2,
+    b: rl.Vector2,
+};
 
-    if (fileName) |fname| {
-        var file = try std.fs.createFileAbsolute(fname, .{});
-        defer file.close();
-        try file.writeAll(text_entry_buf.items);
-    }
+fn getMechRectangle(mech: *Mechanism) rl.Rectangle {
+    const position = getRLPointFromNormalPoint(mech.pose);
+    const rec = rl.Rectangle{ .height = mech.length, .width = mech.width, .x = position.x, .y = position.y };
+    return rec;
 }
 
-fn SaveClockedIn() !void {
-    const app_data_path = try std.process.getEnvVarOwned(gpa, "APPDATA");
-    defer gpa.free(app_data_path);
+fn drawMechanism(mech: *Mechanism) void {
+    const pivot = offsetR1Vector(mech.pivot, mech);
+    const rec = getMechRectangle(mech);
+    rl.drawRectanglePro(rec, pivot, mech.angle, mech.color);
+}
 
-    // 2. Construct the full path to your specific file
-    const full_path = try std.fs.path.join(gpa, &[_][]const u8{ app_data_path, "TimeTracker", "clockedIn.txt" });
-    defer gpa.free(full_path);
+fn getRLPointFromNormalPoint(point: pMz.Vec2d) rl.Vector2 {
+    const y = point.y;
+    const height: f32 = @floatFromInt(rl.getScreenHeight());
+    const flippedY: f32 = height - y;
+    return rl.Vector2{ .x = point.x, .y = flippedY };
+}
 
-    if (std.fs.path.dirname(full_path)) |dir_path| {
-        try std.fs.cwd().makePath(dir_path);
-    }
-
-    // 3. Open the file using the absolute path
-    const file = try std.fs.createFileAbsolute(full_path, .{ .truncate = true });
-    defer file.close();
-
-    var buffer: [128]u8 = undefined;
-    const content = try std.fmt.bufPrint(&buffer, "{d}\n{d}\n", .{ @as(u8, @intCast(isClockedIn)), std.time.timestamp() });
-    try file.writeAll(content);
+fn offsetR1Vector(point: pMz.Vec2d, mech: *Mechanism) rl.Vector2 {
+    return rl.Vector2{ .x = (point.x + (mech.width / 2)), .y = point.y + (mech.length / 2) };
 }
